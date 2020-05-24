@@ -79,13 +79,32 @@ def GetStruturedWords(words):
         df_StructWords = df_StructWords.sort_values(['Y','X'],ascending=[True,True],ignore_index=True)
         df_StructWords['dX'] = df_StructWords['X'].diff()
         AverageSlope = df_StructWords['slope'].mean()
-        df_StructWords = df_StructWords.iloc[::-1]
-    
+    return df_StructWords
+
+def GetCSV_2(df_StructWords):
     line = ''
-    last_para_id = 0
+    f = open(r"test.csv",'w')
     for index, row in df_StructWords.iterrows():
         if(row.dX < 0 or pd.isnull(row['dX'])):
+            line = line + ' ' + row.text + '\n'
+            f.write(line)
+            print(line)
+            line = ''
+        else:
             line = line + ' ' + row.text 
+    f.close()
+    Data_df = pd.read_csv(r"test.csv",names = [1,2,3,4,5,6,7,8,9,10])
+    return Data_df
+
+def GetCSV(df_StructWords):
+    df_StructWords = df_StructWords.iloc[::-1]
+    line = ''
+    last_para_id = 0
+    f = open(r"test.csv",'w')
+    for index, row in df_StructWords.iterrows():
+        if(row.dX < 0 or pd.isnull(row['dX'])):
+            line = line + ' ' + row.text + '\n'
+            f.write(line)
             print(line)
             line = ''
         else:
@@ -94,9 +113,10 @@ def GetStruturedWords(words):
             else:
                 line = line + ' ' + row.text 
         last_para_id = row['Para_Id']
+    f.close()
+    Data_df = pd.read_csv(r"test.csv",names = [1,2,3,4,5,6,7,8,9,10], delimiter= ";")
+    return Data_df
 
-    return df_StructWords
-    
 def get_document_bounds(image_file_path, feature):
     """Returns document bounds given an image."""
     client = vision.ImageAnnotatorClient(credentials=credentials)
@@ -136,6 +156,13 @@ def get_document_bounds(image_file_path, feature):
     # The list `bounds` contains the coordinates of the bounding boxes.
     return bounds, Features
 
+def Cleanup(Data_df):
+    # check which column is having costs and remove other rows
+    DF_cl1 = Data_df[1].replace(",",".")
+    SE_cl1 = DF_cl1.str.findall("\d+\.\d+")
+
+    # clean costs column  rows to keep just cost values
+
 
 def render_doc_text(filein, fileout):
     image = Image.open(filein)
@@ -145,7 +172,10 @@ def render_doc_text(filein, fileout):
     draw_boxes(image, bounds, 'red')
     bounds,Features = get_document_bounds(filein, FeatureType.WORD)
     draw_boxes(image, bounds, 'yellow')
-    GetStruturedWords(Features)
+    df_StructWords = GetStruturedWords(Features)
+    global Data_df
+    Data_df = GetCSV_2(df_StructWords)
+
     if fileout != 0:
         image.save(fileout)
     else:
