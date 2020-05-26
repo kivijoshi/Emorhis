@@ -2,7 +2,8 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 import io
 import os
-
+import cv2
+import numpy as np
 # Imports the Google Cloud client library
 import argparse
 from enum import Enum
@@ -21,11 +22,6 @@ credentials = service_account.Credentials.from_service_account_file(
     key_path,
     scopes=["https://www.googleapis.com/auth/cloud-platform"],
 )
-
-# Instantiates a client
-#client = vision.ImageAnnotatorClient(credentials=credentials)
-
-
 
 
 class FeatureType(Enum):
@@ -76,9 +72,9 @@ def GetStruturedWords(words):
     df_StructWords = pd.DataFrame()
     for word in words:
         df_StructWords = df_StructWords.append(Word2DataFrame(word),ignore_index = True)
-        df_StructWords = df_StructWords.sort_values(['Y','X'],ascending=[True,True],ignore_index=True)
-        df_StructWords['dX'] = df_StructWords['X'].diff()
-        AverageSlope = df_StructWords['slope'].mean()
+    df_StructWords = df_StructWords.sort_values(['Y','X'],ascending=[True,True],ignore_index=True)
+    df_StructWords['dX'] = df_StructWords['X'].diff()
+    AverageSlope = df_StructWords['slope'].mean()
     return df_StructWords
 
 def GetCSV_2(df_StructWords):
@@ -181,7 +177,47 @@ def render_doc_text(filein, fileout):
     else:
         image.show()
 
+def GetUpdatedImage(df_StructWords,filein):
+    X1 = int(df_StructWords['x1'].min())
+    X2 = int(df_StructWords['x3'].max())
+    Y1 = int(df_StructWords['y1'].min())
+    Y2 = int(df_StructWords['y3'].max())
+    img = cv2.imread(filein)
+    crop_img = img[Y1:Y2, X1:X2]
+    crop_img_grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+    
+    ## (2) threshold
+    th, threshed = cv2.threshold(crop_img_grey, 127, 255, cv2.THRESH_BINARY_INV|cv2.THRESH_OTSU)
 
+    ## (3) minAreaRect on the nozeros
+    pts = cv2.findNonZero(threshed)
+    ret = cv2.minAreaRect(pts)
+
+    (cx,cy), (w,h), ang = ret
+    if w>h:
+        w,h = h,w
+        ang += 90
+
+    ## (4) Find rotated matrix, do rotation
+    M = cv2.getRotationMatrix2D((cx,cy), ang, 1.0)
+    rotated = cv2.warpAffine(threshed, M, (img.shape[1], img.shape[0]))
+    #rotated = threshed
+    ## (5) find and draw the upper and lower boundary of each lines
+    hist = cv2.reduce(rotated,1, cv2.REDUCE_AVG).reshape(-1)
+
+    th = 10
+    H,W = img.shape[:2]
+    uppers = [y for y in range(H-1) if hist[y]<=th and hist[y+1]>th]
+    lowers = [y for y in range(H-1) if hist[y]>th and hist[y+1]<=th]
+
+    rotated = cv2.cvtColor(rotated, cv2.COLOR_GRAY2BGR)
+    for y in uppers:
+        cv2.line(rotated, (0,y), (W, y), (255,0,0), 1)
+
+    for y in lowers:
+        cv2.line(rotated, (0,y), (W, y), (0,255,0), 1)
+    return rotated, uppers, lowers
+    
 if __name__ == '__main__':
     #parser = argparse.ArgumentParser()
     #parser.add_argument('detect_file', help='The image for text detection.')
