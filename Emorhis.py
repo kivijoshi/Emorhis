@@ -181,6 +181,7 @@ def render_doc_text(filein, fileout):
         image.show()
 
 def GetUpdatedImage(df_StructWords,filein):
+<<<<<<< HEAD
     X1 = df_StructWords['x1'].min()
     X1 = int(X1)
     X2 = df_StructWords['x3'].max()
@@ -192,6 +193,14 @@ def GetUpdatedImage(df_StructWords,filein):
     img = cv2.imread(filein)
     crop_img = img[Y1:Y2, X1:X2]
     #crop_img = cv2.resize(crop_img, (1000,1200))
+=======
+    X1 = int(df_StructWords['x1'].min())
+    X2 = int(df_StructWords['x3'].max())
+    Y1 = int(df_StructWords['y1'].min())
+    Y2 = int(df_StructWords['y3'].max())
+    img = cv2.imread(filein)
+    crop_img = img[Y1:Y2, X1:X2]
+>>>>>>> f404acb7508b9f4594ca517a05eed21ba106f86c
     crop_img_grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
     
     ## (2) threshold
@@ -208,13 +217,18 @@ def GetUpdatedImage(df_StructWords,filein):
 
     ## (4) Find rotated matrix, do rotation
     M = cv2.getRotationMatrix2D((cx,cy), ang, 1.0)
+<<<<<<< HEAD
     rotated = cv2.warpAffine(threshed, M, (crop_img.shape[1], crop_img.shape[0]))
     original = cv2.warpAffine(crop_img, M, (crop_img.shape[1], crop_img.shape[0]))
+=======
+    rotated = cv2.warpAffine(threshed, M, (img.shape[1], img.shape[0]))
+>>>>>>> f404acb7508b9f4594ca517a05eed21ba106f86c
     #rotated = threshed
     ## (5) find and draw the upper and lower boundary of each lines
     hist = cv2.reduce(rotated,1, cv2.REDUCE_AVG).reshape(-1)
 
     th = 10
+<<<<<<< HEAD
     H,W = crop_img.shape[:2]
     uppers = [y for y in range(H-1) if hist[y]<=th and hist[y+1]>th]
     lowers = [y for y in range(H-1) if hist[y]>th and hist[y+1]<=th]
@@ -228,6 +242,19 @@ def GetUpdatedImage(df_StructWords,filein):
         cv2.line(rotated, (0,y), (W, y), (0,255,0), 1)
         cv2.line(original, (0,y), (W, y), (0,255,0), 1)
     return rotated, original, uppers, lowers
+=======
+    H,W = img.shape[:2]
+    uppers = [y for y in range(H-1) if hist[y]<=th and hist[y+1]>th]
+    lowers = [y for y in range(H-1) if hist[y]>th and hist[y+1]<=th]
+
+    rotated = cv2.cvtColor(rotated, cv2.COLOR_GRAY2BGR)
+    for y in uppers:
+        cv2.line(rotated, (0,y), (W, y), (255,0,0), 1)
+
+    for y in lowers:
+        cv2.line(rotated, (0,y), (W, y), (0,255,0), 1)
+    return rotated, uppers, lowers
+>>>>>>> f404acb7508b9f4594ca517a05eed21ba106f86c
     
 if __name__ == '__main__':
     #parser = argparse.ArgumentParser()
