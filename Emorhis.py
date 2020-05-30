@@ -2,7 +2,8 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 import io
 import os
-
+import cv2
+import numpy as np
 # Imports the Google Cloud client library
 import argparse
 from enum import Enum
@@ -15,17 +16,12 @@ from PIL import Image, ImageDraw
 import pandas as pd
 # TODO(developer): Set key_path to the path to the service account key
 #                  file.
-key_path = r"C:\Users\kaust\Desktop\workspaces\Emorhis\emorhis-49e39873b6f0.json"
+key_path = r"/content/drive/My Drive/emorhis-db78a5d5ba61.json"
 
 credentials = service_account.Credentials.from_service_account_file(
     key_path,
     scopes=["https://www.googleapis.com/auth/cloud-platform"],
 )
-
-# Instantiates a client
-#client = vision.ImageAnnotatorClient(credentials=credentials)
-
-
 
 
 class FeatureType(Enum):
@@ -76,9 +72,9 @@ def GetStruturedWords(words):
     df_StructWords = pd.DataFrame()
     for word in words:
         df_StructWords = df_StructWords.append(Word2DataFrame(word),ignore_index = True)
-        df_StructWords = df_StructWords.sort_values(['Y','X'],ascending=[True,True],ignore_index=True)
-        df_StructWords['dX'] = df_StructWords['X'].diff()
-        AverageSlope = df_StructWords['slope'].mean()
+    df_StructWords = df_StructWords.sort_values(['Y','X'],ascending=[True,True],ignore_index=True)
+    df_StructWords['dX'] = df_StructWords['X'].diff()
+    AverageSlope = df_StructWords['slope'].mean()
     return df_StructWords
 
 def GetCSV_2(df_StructWords):
@@ -88,7 +84,7 @@ def GetCSV_2(df_StructWords):
         if(row.dX < 0 or pd.isnull(row['dX'])):
             line = line + ' ' + row.text + '\n'
             f.write(line)
-            print(line)
+            #print(line)
             line = ''
         else:
             line = line + ' ' + row.text 
@@ -105,7 +101,7 @@ def GetCSV(df_StructWords):
         if(row.dX < 0 or pd.isnull(row['dX'])):
             line = line + ' ' + row.text + '\n'
             f.write(line)
-            print(line)
+            #print(line)
             line = ''
         else:
             if(last_para_id != 0 and last_para_id != row['Para_Id'] and line != ''):
@@ -117,14 +113,17 @@ def GetCSV(df_StructWords):
     Data_df = pd.read_csv(r"test.csv",names = [1,2,3,4,5,6,7,8,9,10], delimiter= ";")
     return Data_df
 
-def get_document_bounds(image_file_path, feature):
+def get_document_bounds(image_file_path, feature,direct_content=None):
     """Returns document bounds given an image."""
     client = vision.ImageAnnotatorClient(credentials=credentials)
 
     bounds = []
     Features = []
-    with io.open(image_file_path, 'rb') as image_file:
-        content = image_file.read()
+    if(image_file_path != None):
+      with io.open(image_file_path, 'rb') as image_file:
+          content = image_file.read()
+    else:
+      content = direct_content
 
     image = types.Image(content=content)
 
@@ -145,7 +144,7 @@ def get_document_bounds(image_file_path, feature):
                     if (feature == FeatureType.WORD):
                         bounds.append(word.bounding_box)
                         Features.append((word,para_id))
-                        print(para_id)
+                        #print(para_id)
                 if (feature == FeatureType.PARA):
                     bounds.append(paragraph.bounding_box)
                     Features.append(paragraph)
@@ -181,7 +180,55 @@ def render_doc_text(filein, fileout):
     else:
         image.show()
 
+def GetUpdatedImage(df_StructWords,filein):
+    X1 = df_StructWords['x1'].min()
+    X1 = int(X1)
+    X2 = df_StructWords['x3'].max()
+    X2 = int(X2)
+    Y1 = df_StructWords['y1'].min()
+    Y1 = int(Y1)
+    Y2 = df_StructWords['y3'].max()
+    Y2 = int(Y2)
+    img = cv2.imread(filein)
+    crop_img = img[Y1:Y2, X1:X2]
+    #crop_img = cv2.resize(crop_img, (1000,1200))
+    crop_img_grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+    
+    ## (2) threshold
+    th, threshed = cv2.threshold(crop_img_grey, 127, 255, cv2.THRESH_BINARY_INV|cv2.THRESH_OTSU)
 
+    ## (3) minAreaRect on the nozeros
+    pts = cv2.findNonZero(threshed)
+    ret = cv2.minAreaRect(pts)
+
+    (cx,cy), (w,h), ang = ret
+    if w>h:
+        w,h = h,w
+        ang += 90
+
+    ## (4) Find rotated matrix, do rotation
+    M = cv2.getRotationMatrix2D((cx,cy), ang, 1.0)
+    rotated = cv2.warpAffine(threshed, M, (crop_img.shape[1], crop_img.shape[0]))
+    original = cv2.warpAffine(crop_img, M, (crop_img.shape[1], crop_img.shape[0]))
+    #rotated = threshed
+    ## (5) find and draw the upper and lower boundary of each lines
+    hist = cv2.reduce(rotated,1, cv2.REDUCE_AVG).reshape(-1)
+
+    th = 10
+    H,W = crop_img.shape[:2]
+    uppers = [y for y in range(H-1) if hist[y]<=th and hist[y+1]>th]
+    lowers = [y for y in range(H-1) if hist[y]>th and hist[y+1]<=th]
+    
+    rotated = cv2.cvtColor(rotated, cv2.COLOR_GRAY2BGR)
+    for y in uppers:
+        cv2.line(rotated, (0,y), (W, y), (255,0,0), 1)
+        cv2.line(original, (0,y), (W, y), (255,0,0), 1)
+
+    for y in lowers:
+        cv2.line(rotated, (0,y), (W, y), (0,255,0), 1)
+        cv2.line(original, (0,y), (W, y), (0,255,0), 1)
+    return rotated, original, uppers, lowers
+    
 if __name__ == '__main__':
     #parser = argparse.ArgumentParser()
     #parser.add_argument('detect_file', help='The image for text detection.')
